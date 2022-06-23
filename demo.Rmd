@@ -1,0 +1,47 @@
+---
+title: "Demo"
+author: "Aaron Price"
+date: "6/20/2022"
+output: html_document
+---
+
+Demo document for references throughout research process
+
+
+Set wd
+```{r}
+setwd("C:/Users/price/OneDrive/Documents/Aaron/grad_research_su22")
+```
+
+```{r}
+getwd()
+```
+
+Source Functions
+```{r}
+source('functions/model_ODE.R')
+source('functions/model_STODE.R')
+source('functions/model_ODE_returnFull.R')
+source('functions/model_ODE_cueMod.R')
+source('functions/model_ODE_modAK.R')
+```
+
+Read Data
+```{r}
+init_df <- read.csv("input_data/LTER_SITE_test.csv")  
+```
+
+Test Model Functions
+```{r}
+test_1 <- model_ODE(init_df, 90000)
+test_2 <- model_STODE(init_df, 1E8)
+test_3 <- model_ODEFULL(init_df, 90000)
+```
+
+```{r}
+
+test_4 <- model_ODE_cueMod(init_df, 90000)
+test_5 <- model_ODE_modAK(init_df, 90000)
+
+```
+
