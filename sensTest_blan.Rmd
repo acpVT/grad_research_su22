@@ -1,0 +1,187 @@
+---
+title: "Leno Sensitivity Test"
+author: "Aaron Price"
+date: "6/24/2022"
+output: html_document
+---
+# Sensitivity Tests
+
+Dependencies:
+- sensitivity_functions.R
+- model_ODE.R
+- model_ODE_cueMOD.R
+- model_ODE_modAK.R
+
+Workflow:
+- Read in data from one site stored in .csv
+- Process that data and retrieve relavant information for each variable
+- Run the model function parallel to the finishing function
+- Run three sensitviity functions independtly and output results to .csv
+- Move forwards with evaluation in seperate files.
+
+### Environment Setup
+Set the working directory and source model functions from elsewhere in the directory
+```{r}
+setwd("C:/Users/price/OneDrive/Documents/Aaron/grad_research_su22") # Change WD
+
+source('functions/sensitivity_functions.R') # Sources all sensitivity functions
+source('functions/model_ODE.R') # Source model function
+source('functions/model_ODE_cueMod.R') # Source CUE modifying function
+source('functions/model_ODE_modAK.R')
+```
+
+### Set column names
+Mostly done so it is clear what output variables will be analyzed
+```{r}
+my_colnames <- c('Variable', 'MIC_1', 'MIC_2', 'SOMp', 'SOMc', 'SOMa') # List of column names
+```
+
+### Read data and generate gradients of input parameters
+```{r}
+times <- get_times(10) # Set time condition in years (will work in hours)
+
+path_to_file <- "input_data/LTER_SITE_testBlan.csv"
+
+# For each variable, read data and find initial variable condition
+anpp_test<-get_d(path_to_file, 'ANPP'); anpp_init<-get_i(path_to_file, 'ANPP')
+mat_test<-get_d(path_to_file, 'MAT'); mat_init<-get_i(path_to_file, 'MAT')
+clay_test<-get_d(path_to_file, 'CLAY2'); clay_init<-get_i(path_to_file, 'CLAY2')
+lig_test<-get_d(path_to_file, 'LIG'); lig_init<-get_i(path_to_file, 'LIG')
+cn_test<-get_d(path_to_file, 'CN'); cn_init<-get_i(path_to_file, 'CN')
+
+cue1_test<-get_d(path_to_file, 'CUE1'); cue1_init<-get_i(path_to_file, 'CUE1')
+cue2_test<-get_d(path_to_file, 'CUE2'); cue2_init<-get_i(path_to_file, 'CUE2')
+cue3_test<-get_d(path_to_file, 'CUE3'); cue3_init<-get_i(path_to_file, 'CUE3')
+cue4_test<-get_d(path_to_file, 'CUE4'); cue4_init<-get_i(path_to_file, 'CUE4')
+
+a_test<-get_d(path_to_file, 'a'); a_init<-get_i(path_to_file, 'a')
+k_test<-get_d(path_to_file, 'k'); k_init<-get_i(path_to_file, 'k')
+```
+
+### Run model and create useable data frames for each input parameter
+```{r}
+# Generate new data frames with output across the gradient of parameters
+# Use chained model and finishing functions to get final data frames for anlaysis
+anpp_df <- fin_DF(model_ODE(anpp_test, times), anpp_test, 'ANPP')
+mat_df <- fin_DF(model_ODE(mat_test, times), mat_test, 'MAT')
+clay_df <- fin_DF(model_ODE(clay_test, times), clay_test, 'CLAY2')
+lig_df <- fin_DF(model_ODE(lig_test, times), lig_test, 'LIG')
+cn_df  <- fin_DF(model_ODE(cn_test, times), cn_test, 'CN')
+
+cue1_df <- fin_DF(model_ODE_cueMod(cue1_test, times), cue1_test, 'CUE1')
+cue2_df <- fin_DF(model_ODE_cueMod(cue2_test, times), cue2_test, 'CUE2')
+cue3_df <- fin_DF(model_ODE_cueMod(cue3_test, times), cue3_test, 'CUE3')
+cue4_df <- fin_DF(model_ODE_cueMod(cue4_test, times), cue4_test, 'CUE4')
+
+a_df <- fin_DF(model_ODE_modAK(a_test, times), a_test, 'a')
+k_df <- fin_DF(model_ODE_modAK(k_test, times), k_test, 'k')
+```
+
+### Running Sensitivity index calculations
+```{r}
+SI_df <- data.frame(matrix(nrow = 11, ncol = 6)) # Initiate the new data.frame
+colnames(SI_df) <- my_colnames # Rename columns
+
+# Run Sensitivity index function on each variable
+anpp_SI <- sens_index(anpp_df, 'ANPP')
+mat_SI <- sens_index(mat_df, 'MAT') 
+clay_SI <- sens_index(clay_df, 'Clay')
+lig_SI <- sens_index(lig_df, 'Lignin')
+cn_SI <- sens_index(cn_df, 'CN')
+
+cue1_SI <- sens_index(cue1_df, 'CUE1')
+cue2_SI <- sens_index(cue2_df, 'CUE2')
+cue3_SI <- sens_index(cue3_df, 'CUE3')
+cue4_SI <- sens_index(cue4_df, 'CUE4')
+
+a_SI <- sens_index(a_df, 'a')
+k_SI <- sens_index(k_df, 'k')
+
+# Merge into a single data.frame
+SI_df[1,] <- anpp_SI
+SI_df[2,] <- mat_SI
+SI_df[3,] <- clay_SI
+SI_df[4,] <- lig_SI
+SI_df[5,] <- cn_SI
+SI_df[6,] <- cue1_SI
+SI_df[7,] <- cue2_SI
+SI_df[8,] <- cue3_SI
+SI_df[9,] <- cue4_SI
+SI_df[10,] <- a_SI
+SI_df[11,] <- k_SI
+
+data_out <- SI_df
+fout <- 'output/index_blan.csv'
+write.table(data_out, file=fout, sep=",", col.names=TRUE, row.names=FALSE)
+```
+
+### Running sensitvity coefficient function
+```{r}
+CO_df <- data.frame(matrix(nrow = 11, ncol = 6))
+colnames(CO_df) <- my_colnames
+# Run Sensitivity coefficient function for each variable
+anpp_coef <- sens_coef(anpp_df, anpp_init, 'ANPP')
+mat_coef <- sens_coef(mat_df, mat_init, 'MAT')
+clay_coef <- sens_coef(clay_df, clay_init, 'Clay')
+lig_coef <- sens_coef(lig_df, lig_init, 'Lignin')
+cn_coef <- sens_coef(cn_df, cn_init, 'CN')
+
+cue1_coef <- sens_coef(cue1_df, cue1_init, 'CUE1')
+cue2_coef <- sens_coef(cue2_df, cue2_init, 'CUE2')
+cue3_coef <- sens_coef(cue3_df, cue3_init, 'CUE3')
+cue4_coef <- sens_coef(cue4_df, cue4_init, 'CUE4')
+
+a_coef <- sens_coef(a_df, a_init, 'a')
+k_coef <- sens_coef(k_df, k_init, 'k')
+
+CO_df[1,] <- anpp_coef 
+CO_df[2,] <- mat_coef
+CO_df[3,] <- clay_coef
+CO_df[4,] <- lig_coef
+CO_df[5,] <- cn_coef
+CO_df[6,] <- cue1_coef
+CO_df[7,] <- cue2_coef
+CO_df[8,] <- cue3_coef
+CO_df[9,] <- cue4_coef
+CO_df[10,] <- a_coef
+CO_df[11,] <- k_coef
+
+data_out <- CO_df
+fout <- 'output/coef_blan.csv'
+write.table(data_out, file=fout, sep=",", col.names=TRUE, row.names=FALSE)
+```
+
+```{r}
+SD_df <- data.frame(matrix(nrow = 11, ncol = 6))
+colnames(SD_df) <- my_colnames
+# Run Sensitivity coefficient function for each variable
+anpp_sd <- sens_un(anpp_df, anpp_init, 'ANPP')
+mat_sd <- sens_un(mat_df, mat_init, 'MAT')
+clay_sd <- sens_un(clay_df, clay_init, 'Clay')
+lig_sd <- sens_un(lig_df, lig_init, 'Lignin')
+cn_sd <- sens_un(cn_df, cn_init, 'CN')
+
+cue1_sd <- sens_un(cue1_df, cue1_init, 'CUE1')
+cue2_sd <- sens_un(cue2_df, cue2_init, 'CUE2')
+cue3_sd <- sens_un(cue3_df, cue3_init, 'CUE3')
+cue4_sd <- sens_un(cue4_df, cue4_init, 'CUE4')
+
+a_sd <- sens_un(a_df, a_init, 'a')
+k_sd <- sens_un(k_df, k_init, 'k')
+
+SD_df[1,] <- anpp_sd 
+SD_df[2,] <- mat_sd
+SD_df[3,] <- clay_sd
+SD_df[4,] <- lig_sd
+SD_df[5,] <- cn_sd
+SD_df[6,] <- cue1_sd
+SD_df[7,] <- cue2_sd
+SD_df[8,] <- cue3_sd
+SD_df[9,] <- cue4_sd
+SD_df[10,] <- a_sd
+SD_df[11,] <- k_sd
+
+data_out <- SD_df
+fout <- 'output/uncert_blan.csv'
+write.table(data_out, file=fout, sep=",", col.names=TRUE, row.names=FALSE)
+```

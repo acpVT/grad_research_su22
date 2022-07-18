@@ -1,0 +1,262 @@
+---
+title: "sens_analysis"
+author: "Aaron Price"
+date: "6/22/2022"
+output: html_document
+---
+
+# Sensitivity Tests
+
+### Environment Setup
+Set the working directory and source model functions from elsewhere in the directory
+```{r}
+setwd("C:/Users/price/OneDrive/Documents/Aaron/grad_research_su22") # Change WD
+source('functions/model_ODE.R') # Source model function
+source('functions/model_ODE_cueMod.R') # Source CUE modifying function
+source('functions/model_ODE_modAK.R')
+```
+### Set column names
+Mostly done so it is clear what output variables will be analyzed
+```{r}
+my_colnames <- c('Variable', 'MIC_1', 'MIC_2', 'SOMp', 'SOMc', 'SOMa') # List of column names
+```
+
+### Setup functions
+These functions are used to manipulate the data, set initial conditions for time, and create the correct conditions for sensitivity testing.
+```{r}
+get_times <- function(years){ # Set time scale for tests
+  times <- years * 365 * 24 # Convert years to hours
+  return(times) # Return hours to be used in model as a single variable
+}
+
+get_i <- function(dataset, v){ # Get the initial value of variable
+  df <- read.csv(dataset) # Read data
+  init <- df[1, v] # Fancy index to the correct variable
+  return(init) # Return initial condition as a single variable
+} ### Initial value is considered the midpoint of the test
+
+get_d <- function(dataset, v, scalar = 0.5){ # Create distribution of variable as new DF
+  df <- read.csv(dataset) # Read original
+  df <- df[rep(seq_len(nrow(df)), each = 11), ] # Repeat the necessary amount of times
+  scalar <- scalar # Scalar for distribution, default to 0.5
+  for(i in 1:length(df$Site)){
+    df[i, v] <- df[i, v] * scalar
+    scalar <- scalar + 0.1
+  } # Loop to set the new distribution
+  return(df) # Return the updated data.frame with variable distributed
+}
+
+fin_DF <- function(df, df_i, v){ # Creates the final version of the model output including parm used
+  list <- as.list(df_i[,v]) # Get list of parameters used in each observation
+  for(i in 1:length(df[,1])){
+    df[i,4] <- list[i]
+  } # Loops through the new list to add the initial variables
+  return(df) # Returns the finished data.frame
+}
+```
+
+### Sensitivity funcitons for Local Sensitivity Calculations
+Local sensitivities are those which deal with changes in a single variable at a given time. Four "Importance Factors" have been identified to be calculated.  
+- Sensitivity index  
+- Sensitivity distribution  
+- Sensitivity coefficient  
+- Uncertainty  
+The combination of these factors gives insight into how the model operates and what single changes may influence outcomes. This is of particular importance for parameters which can be altered by land-use or managment.
+```{r}
+sens_index <- function(df, v){ # For calculating the sensitivity index
+  var <- v # Assign variable name
+  a <- (max(df$SOM_1) - min(df$SOM_1)) / max(df$SOM_1) # Change calculations
+  b <- (max(df$SOM_2) - min(df$SOM_2)) / max(df$SOM_2) # Change calculations
+  c <- (max(df$SOM_3) - min(df$SOM_3)) / max(df$SOM_3) # Change calculations
+  return(c(v,a,b,c)) # Returns list of 4 variables, needs further processing
+}
+
+sens_coef <- function(data, init, v){ # For calculating the sensitivity coefficient 
+  copy <- data.frame(data) # Create a copy of the data frame to be used as output
+  names<- unlist(list(colnames(data))) # To get the length of names
+  names <- names[-length(names)] # Removes variable name
+  
+  for(i in 1:3){
+    for(n in 1:length(data[,1])){
+      copy[n,i]<-((data[n,i]-data[6,i])/data[6,i])*(((data[n,4]-init)/init)^-1) # Approximation of partial derivative
+    } # Loops through columns then rows
+  }
+  copy <- copy[-6,]
+  ##----- STOP HERE AND RETURN COPY TO GET THE FULL LIST -----##
+  # return(copy)
+  
+  var <- v
+  a <- mean(copy[,1]) # Take the mean SOM_1
+  b <- mean(copy[,2]) # Take the mean SOM_2
+  c <- mean(copy[,3]) # Take the mean SOM_3
+  return(c(v,a,b,c)) # Returns data.frame
+}
+
+sens_un <- function(data, init, v){
+  copy <- data.frame(data) # Create a copy of the data frame to be used as output
+  copy <- copy[-4]
+  names<- unlist(list(colnames(data))) # To get the length of names
+  names <- names[-length(names)] # Removes variable name
+  
+  for(i in 1:3){
+    sd <- sd(data[,i])
+    for(n in 1:length(data[,1])){
+      copy[n,i]<-abs(((data[n,i]-data[6,i])/data[6,i])*(((data[n,4]-init)/init)^-1)) # Approximation of partial derivative
+      copy[n,i]<-copy[n,i] * 2*sd
+    } # Loops through columns then rows
+  }
+  var <- v
+  a <- mean(copy[,1]) # Take the mean SOM_1
+  b <- mean(copy[,2]) # Take the mean SOM_2
+  c <- mean(copy[,3]) # Take the mean SOM_3
+  return(c(v,a,b,c))
+}
+```
+
+### Read data and generate gradients of input parameters
+```{r}
+times <- get_times(10) # Set time condition in years (will work in hours)
+
+# For each variable, read data and find initial variable condition
+anpp_test<-get_d("input_data/LTER_SITE_test.csv", 'ANPP'); anpp_init<-get_i("input_data/LTER_SITE_test.csv", 'ANPP')
+mat_test<-get_d("input_data/LTER_SITE_test.csv", 'MAT'); mat_init<-get_i("input_data/LTER_SITE_test.csv", 'MAT')
+clay_test<-get_d("input_data/LTER_SITE_test.csv", 'CLAY2'); clay_init<-get_i("input_data/LTER_SITE_test.csv", 'CLAY2')
+lig_test<-get_d("input_data/LTER_SITE_test.csv", 'LIG'); lig_init<-get_i("input_data/LTER_SITE_test.csv", 'LIG')
+cn_test<-get_d("input_data/LTER_SITE_test.csv", 'CN'); cn_init<-get_i("input_data/LTER_SITE_test.csv", 'CN')
+
+cue1_test<-get_d("input_data/LTER_SITE_test.csv", 'CUE1'); cue1_init<-get_i("input_data/LTER_SITE_test.csv", 'CUE1')
+cue2_test<-get_d("input_data/LTER_SITE_test.csv", 'CUE2'); cue2_init<-get_i("input_data/LTER_SITE_test.csv", 'CUE2')
+cue3_test<-get_d("input_data/LTER_SITE_test.csv", 'CUE3'); cue3_init<-get_i("input_data/LTER_SITE_test.csv", 'CUE3')
+cue4_test<-get_d("input_data/LTER_SITE_test.csv", 'CUE4'); cue4_init<-get_i("input_data/LTER_SITE_test.csv", 'CUE4')
+
+a_test<-get_d('input_data/LTER_SITE_test.csv', 'a'); a_init<-get_i('input_data/LTER_SITE_test.csv', 'a')
+k_test<-get_d('input_data/LTER_SITE_test.csv', 'k'); k_init<-get_i('input_data/LTER_SITE_test.csv', 'k')
+```
+
+### Run model and create useable data frames for each input parameter
+```{r}
+# Generate new data frames with output across the gradient of parameters
+# Use chained model and finishing functions to get final data frames for anlaysis
+anpp_df <- fin_DF(model_ODE(anpp_test, times), anpp_test, 'ANPP')
+mat_df <- fin_DF(model_ODE(mat_test, times), mat_test, 'MAT')
+clay_df <- fin_DF(model_ODE(clay_test, times), clay_test, 'CLAY2')
+lig_df <- fin_DF(model_ODE(lig_test, times), lig_test, 'LIG')
+cn_df  <- fin_DF(model_ODE(cn_test, times), cn_test, 'CN')
+
+cue1_df <- fin_DF(model_ODE_cueMod(cue1_test, times), cue1_test, 'CUE1')
+cue2_df <- fin_DF(model_ODE_cueMod(cue2_test, times), cue2_test, 'CUE2')
+cue3_df <- fin_DF(model_ODE_cueMod(cue3_test, times), cue3_test, 'CUE3')
+cue4_df <- fin_DF(model_ODE_cueMod(cue4_test, times), cue4_test, 'CUE4')
+
+a_df <- fin_DF(model_ODE_modAK(a_test, times), a_test, 'a')
+k_df <- fin_DF(model_ODE_modAK(k_test, times), k_test, 'k')
+```
+
+### Running Sensitivity index calculations
+```{r}
+SI_df <- data.frame(matrix(nrow = 11, ncol = 6)) # Initiate the new data.frame
+colnames(SI_df) <- my_colnames # Rename columns
+
+# Run Sensitivity index function on each variable
+anpp_SI <- sens_index(anpp_df, 'ANPP')
+mat_SI <- sens_index(mat_df, 'MAT') 
+clay_SI <- sens_index(clay_df, 'Clay')
+lig_SI <- sens_index(lig_df, 'Lignin')
+cn_SI <- sens_index(cn_df, 'CN')
+
+cue1_SI <- sens_index(cue1_df, 'CUE1')
+cue2_SI <- sens_index(cue2_df, 'CUE2')
+cue3_SI <- sens_index(cue3_df, 'CUE3')
+cue4_SI <- sens_index(cue4_df, 'CUE4')
+
+a_SI <- sens_index(a_df, 'a')
+k_SI <- sens_index(k_df, 'k')
+
+# Merge into a single data.frame
+SI_df[1,] <- anpp_SI
+SI_df[2,] <- mat_SI
+SI_df[3,] <- clay_SI
+SI_df[4,] <- lig_SI
+SI_df[5,] <- cn_SI
+SI_df[6,] <- cue1_SI
+SI_df[7,] <- cue2_SI
+SI_df[8,] <- cue3_SI
+SI_df[9,] <- cue4_SI
+SI_df[10,] <- a_SI
+SI_df[11,] <- k_SI
+
+data_out <- SI_df
+fout <- 'output/index_leno.csv'
+write.table(data_out, file=fout, sep=",", col.names=TRUE, row.names=FALSE)
+```
+
+### Running sensitvity coefficient function
+```{r}
+CO_df <- data.frame(matrix(nrow = 11, ncol = 4))
+colnames(CO_df) <- my_colnames
+# Run Sensitivity coefficient function for each variable
+anpp_coef <- sens_coef(anpp_df, anpp_init, 'ANPP')
+mat_coef <- sens_coef(mat_df, mat_init, 'MAT')
+clay_coef <- sens_coef(clay_df, clay_init, 'Clay')
+lig_coef <- sens_coef(lig_df, lig_init, 'Lignin')
+cn_coef <- sens_coef(cn_df, cn_init, 'CN')
+
+cue1_coef <- sens_coef(cue1_df, cue1_init, 'CUE1')
+cue2_coef <- sens_coef(cue2_df, cue2_init, 'CUE2')
+cue3_coef <- sens_coef(cue3_df, cue3_init, 'CUE3')
+cue4_coef <- sens_coef(cue4_df, cue4_init, 'CUE4')
+
+a_coef <- sens_coef(a_df, a_init, 'a')
+k_coef <- sens_coef(k_df, k_init, 'k')
+
+CO_df[1,] <- anpp_coef 
+CO_df[2,] <- mat_coef
+CO_df[3,] <- clay_coef
+CO_df[4,] <- lig_coef
+CO_df[5,] <- cn_coef
+CO_df[6,] <- cue1_coef
+CO_df[7,] <- cue2_coef
+CO_df[8,] <- cue3_coef
+CO_df[9,] <- cue4_coef
+CO_df[10,] <- a_coef
+CO_df[11,] <- k_coef
+
+data_out <- CO_df
+fout <- 'output/coef_leno.csv'
+write.table(data_out, file=fout, sep=",", col.names=TRUE, row.names=FALSE)
+```
+
+```{r}
+SD_df <- data.frame(matrix(nrow = 11, ncol = 4))
+colnames(SD_df) <- my_colnames
+# Run Sensitivity coefficient function for each variable
+anpp_sd <- sens_un(anpp_df, anpp_init, 'ANPP')
+mat_sd <- sens_un(mat_df, mat_init, 'MAT')
+clay_sd <- sens_un(clay_df, clay_init, 'Clay')
+lig_sd <- sens_un(lig_df, lig_init, 'Lignin')
+cn_sd <- sens_un(cn_df, cn_init, 'CN')
+
+cue1_sd <- sens_un(cue1_df, cue1_init, 'CUE1')
+cue2_sd <- sens_un(cue2_df, cue2_init, 'CUE2')
+cue3_sd <- sens_un(cue3_df, cue3_init, 'CUE3')
+cue4_sd <- sens_un(cue4_df, cue4_init, 'CUE4')
+
+a_sd <- sens_un(a_df, a_init, 'a')
+k_sd <- sens_un(k_df, k_init, 'k')
+
+SD_df[1,] <- anpp_sd 
+SD_df[2,] <- mat_sd
+SD_df[3,] <- clay_sd
+SD_df[4,] <- lig_sd
+SD_df[5,] <- cn_sd
+SD_df[6,] <- cue1_sd
+SD_df[7,] <- cue2_sd
+SD_df[8,] <- cue3_sd
+SD_df[9,] <- cue4_sd
+SD_df[10,] <- a_sd
+SD_df[11,] <- k_sd
+
+data_out <- SD_df
+fout <- 'output/uncert_leno.csv'
+write.table(data_out, file=fout, sep=",", col.names=TRUE, row.names=FALSE)
+```
