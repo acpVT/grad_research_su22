@@ -1,0 +1,65 @@
+---
+title: "Untitled"
+author: "Aaron Price"
+date: "7/19/2022"
+output: html_document
+---
+
+Set wd
+```{r}
+setwd("C:/Users/price/OneDrive/Documents/Aaron/grad_research_su22")
+```
+
+```{r}
+getwd()
+```
+
+Source Functions
+```{r}
+source('functions/model_ODE.R')
+source('functions/model_STODE.R')
+source('functions/model_ODE_returnFull.R')
+source('functions/model_ODE_cueMod.R')
+source('functions/model_ODE_modAK.R')
+```
+
+```{r}
+init_df <- read.csv("input_data/LTER_SITE_A.csv") 
+
+for(i in 1:length(init_df$ANPP)){
+  init_df$ANPP[i] <- init_df$ANPP[i] * 1000
+}
+
+run_st <- model_STODE(init_df, 1E8)
+
+df_st <- data.frame(init_df)
+for(i in 1:length(df_st$Site)){
+  df_st$SOM_1[i] <- run_st$SOMp[i]
+  df_st$SOM_2[i] <- run_st$SOMc[i]
+  df_st$SOM_3[i] <- run_st$SOMa[i]
+}
+
+for(i in 1:length(df_st$h_frac)){
+  df_st$heavy[i] <- ((df_st$SOMp_est[i] * df_st$BD[i] * df_st$depth[i]) / 100) * 10000
+}
+
+for(i in 1:length(df_st$h_frac)){
+  df_st$thou[i] <- df_st$heavy[i] / 1000
+}
+
+
+```
+
+
+```{r}
+
+p <- (ggplot(data = df_st, mapping = aes(x = heavy, y = SOM_1)) 
+          + geom_point() + xlim(0, 310) + ylim(0, 310) + geom_smooth(method = 'lm',
+                                                                     se=FALSE)
+      + geom_text(label = df_st$Site) + geom_abline(intercept = 0, slope = 1)
+      + xlab("SOMMOS Heavy Fraction (g/m2)") + ylab("MIMICS SOMp (g/m2)")
+      + ggtitle(''))
+
+p + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+```
